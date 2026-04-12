@@ -1,4 +1,4 @@
-// src/pages/PdvVendedor.jsx
+
 import { useState, useEffect } from 'react';
 import { Package, Search, ShoppingCart, LogOut, Plus, Trash2, Truck, Handbag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -51,7 +51,6 @@ export default function PdvVendedor() {
   const finalizarVendaPresencial = () => {
     alert(`Venda finalizada com sucesso! Total: R$ ${totalVenda.toFixed(2)}`);
     setVendaAtiva([]);
-    // Aqui no futuro chamaremos: await api.post('/vendas', vendaAtiva);
   };
 
   return (

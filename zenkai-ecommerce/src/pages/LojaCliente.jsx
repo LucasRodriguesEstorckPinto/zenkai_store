@@ -1,4 +1,4 @@
-// src/pages/LojaCliente.jsx
+
 import { useState, useEffect } from 'react';
 import { ShoppingBag, X, MapPin, Truck } from 'lucide-react';
 import { api } from '../services/api';

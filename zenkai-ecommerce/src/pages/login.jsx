@@ -17,10 +17,10 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Chama a nossa API (atualmente mockada, futuramente o FastAPI)
+      
       const resposta = await api.login(email, senha, abaAtiva);
       
-      // Aqui você salvaria o token no localStorage ou Context API num projeto real
+     
       console.log("Login bem sucedido:", resposta);
 
       // Redireciona baseado no papel (role)

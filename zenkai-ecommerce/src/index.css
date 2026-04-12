@@ -8,7 +8,6 @@
   }
 }
 
-/* Oculta a barra de rolagem mas mantém a funcionalidade (Estética Clean) */
 ::-webkit-scrollbar {
   width: 6px;
 }

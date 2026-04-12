@@ -1,4 +1,4 @@
-// src/services/api.js
+
 
 export const mockProdutos = [
   {
