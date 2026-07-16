@@ -1,48 +1,44 @@
-
-
-export const mockProdutos = [
-  {
-    id: 1,
-    nome: "Nike Zoom Freak 4",
-    categoria: "Basquete",
-    preco: 899.90,
-    // O banco de dados retornará apenas a chave de referência da imagem
-    imagem_ref: "zoomFreak", 
-    estoque: { loja_fisica: 5, centro_distribuicao: 12 }
-  },
-  {
-    id: 2,
-    nome: "Adidas Predator Edge",
-    categoria: "Chuteira",
-    preco: 1299.90,
-    imagem_ref: "predator",
-    estoque: { loja_fisica: 0, centro_distribuicao: 8 }
-  },
-  {
-    id: 3,
-    nome: "Puma MB.02",
-    categoria: "Basquete",
-    preco: 999.90,
-    imagem_ref: "pumaMB",
-    estoque: { loja_fisica: 3, centro_distribuicao: 0 }
-  }
-];
+const BASE_URL = 'http://localhost:8000/zenkai/api';
 
 export const api = {
   getProdutos: async () => {
-    return new Promise((resolve) => setTimeout(() => resolve(mockProdutos), 500));
+    const response = await fetch(`${BASE_URL}/produtos`);
+    if (!response.ok) throw new Error('Falha ao buscar produtos');
+    return response.json();
   },
-  login: async (email, senha, tipo) => {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (email === "cliente@zenkai.com" && tipo === "cliente") {
-          resolve({ token: "token-123", role: "cliente", nome: "Cliente" });
-        } else if (email === "vendedor@zenkai.com" && tipo === "vendedor") {
-          resolve({ token: "token-456", role: "vendedor", nome: "Vendedor" });
-        } else {
-          reject(new Error("Credenciais inválidas"));
-        }
-      }, 800);
+
+  login: async (email, senha) => {
+    const response = await fetch(`${BASE_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha })
     });
+    
+    if (!response.ok) throw new Error('Credenciais inválidas');
+    const data = await response.json();
+    
+    // Salva a sessão do usuário
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('role', data.role);
+    localStorage.setItem('nome', data.nome);
+    
+    return data;
+  },
+
+  cadastro: async (nome, email, senha, role = 'CLIENTE') => {
+    const response = await fetch(`${BASE_URL}/cadastro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome, email, senha, role })
+    });
+    
+    if (!response.ok) throw new Error('Erro ao cadastrar');
+    return response.json();
+  },
+
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('role');
+    localStorage.removeItem('nome');
   }
 };

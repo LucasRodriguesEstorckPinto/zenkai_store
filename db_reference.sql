@@ -15,6 +15,7 @@ CREATE TABLE Cliente (
     Endereco TEXT,
     Data_Cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
     Tipo_Cliente ENUM('PF', 'PJ') NOT NULL -- Indicador do tipo de subclasse
+    Role ENUM('CLIENTE', 'ADMIN') NOT NULL DEFAULT 'CLIENTE';
 );
 
 -- 2. Subclasses de Cliente
