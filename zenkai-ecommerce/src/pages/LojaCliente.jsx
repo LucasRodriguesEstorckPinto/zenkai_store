@@ -26,10 +26,33 @@ export default function LojaCliente() {
     carregarProdutos();
   }, []);
 
+  // --- NOVAS FUNÇÕES DO CARRINHO ---
   const adicionarAoCarrinho = (produto) => {
-    const novoItem = { ...produto, idCarrinho: Date.now(), tipoEntrega: 'casa' };
-    setCarrinho([...carrinho, novoItem]);
+    const itemExistente = carrinho.find(item => item.id === produto.id);
+    
+    if (itemExistente) {
+      setCarrinho(carrinho.map(item => 
+        item.id === produto.id ? { ...item, quantidade: item.quantidade + 1 } : item
+      ));
+    } else {
+      const novoItem = { ...produto, idCarrinho: Date.now(), tipoEntrega: 'casa', quantidade: 1 };
+      setCarrinho([...carrinho, novoItem]);
+    }
     setIsCarrinhoOpen(true);
+  };
+
+  const alterarQuantidade = (idCarrinho, delta) => {
+    setCarrinho(carrinho.map(item => {
+      if (item.idCarrinho === idCarrinho) {
+        const novaQtd = item.quantidade + delta;
+        return { ...item, quantidade: novaQtd > 0 ? novaQtd : 1 }; // Impede que a quantidade fique menor que 1
+      }
+      return item;
+    }));
+  };
+
+  const removerDoCarrinho = (idCarrinho) => {
+    setCarrinho(carrinho.filter(item => item.idCarrinho !== idCarrinho));
   };
 
   const alterarTipoEntrega = (idCarrinho, tipo) => {
@@ -38,18 +61,17 @@ export default function LojaCliente() {
     ));
   };
 
-  const totalCarrinho = carrinho.reduce((acc, item) => acc + item.preco, 0);
+  const totalCarrinho = carrinho.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
 
   // --- LÓGICA DE CHECKOUT ---
   const handleFinalizarCompra = async () => {
     setProcessandoCheckout(true);
     try {
-      // Montando o payload esperado pelo backend
       const pedido = {
         total: totalCarrinho,
         itens: carrinho.map(item => ({
           produto_id: item.id,
-          quantidade: 1,
+          quantidade: item.quantidade, // Agora envia a quantidade real para o banco
           tipo_entrega: item.tipoEntrega,
           preco_unitario: item.preco
         }))
@@ -58,8 +80,8 @@ export default function LojaCliente() {
       await api.checkout(pedido);
       
       alert('Compra finalizada com sucesso! Seu pedido foi registrado no sistema.');
-      setCarrinho([]); // Limpa o carrinho
-      setIsCarrinhoOpen(false); // Fecha o menu lateral
+      setCarrinho([]); 
+      setIsCarrinhoOpen(false); 
     } catch (error) {
       alert('Erro ao processar a compra: Verifique se você está logado!');
     } finally {
@@ -82,7 +104,7 @@ export default function LojaCliente() {
               <ShoppingBag size={24} />
               {carrinho.length > 0 && (
                 <span className="absolute top-0 right-0 bg-zenkai-neonBlue text-black text-xs font-bold h-5 w-5 rounded-full flex items-center justify-center transform translate-x-1 -translate-y-1">
-                  {carrinho.length}
+                  {carrinho.reduce((acc, item) => acc + item.quantidade, 0)}
                 </span>
               )}
             </button>
@@ -135,14 +157,34 @@ export default function LojaCliente() {
             <p className="text-center text-zenkai-textMuted mt-10">Seu carrinho está vazio.</p>
           ) : (
             carrinho.map((item) => (
-              <div key={item.idCarrinho} className="bg-zenkai-bg p-4 rounded-xl border border-zenkai-border">
+              <div key={item.idCarrinho} className="bg-zenkai-bg p-4 rounded-xl border border-zenkai-border relative group">
+                
+                {/* Botão de Excluir */}
+                <button 
+                  onClick={() => removerDoCarrinho(item.idCarrinho)}
+                  className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                >
+                  <X size={14} />
+                </button>
+
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <p className="font-bold text-sm">{item.nome}</p>
+                    <p className="font-bold text-sm pr-4">{item.nome}</p>
                     <p className="text-zenkai-neonBlue font-mono text-sm mt-1">R$ {item.preco.toFixed(2)}</p>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-4 bg-black/40 p-1 rounded-lg border border-zenkai-border">
+
+                {/* Controles de Quantidade */}
+                <div className="flex items-center justify-between mt-3 mb-3">
+                  <span className="text-xs text-zenkai-textMuted">Quantidade:</span>
+                  <div className="flex items-center gap-3 bg-black/40 rounded-lg px-2 py-1 border border-zenkai-border">
+                    <button onClick={() => alterarQuantidade(item.idCarrinho, -1)} className="text-zenkai-textMuted hover:text-white px-1">-</button>
+                    <span className="text-sm font-bold w-4 text-center">{item.quantidade}</span>
+                    <button onClick={() => alterarQuantidade(item.idCarrinho, 1)} className="text-zenkai-textMuted hover:text-white px-1">+</button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 bg-black/40 p-1 rounded-lg border border-zenkai-border">
                   <button
                     onClick={() => alterarTipoEntrega(item.idCarrinho, 'casa')}
                     className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-medium rounded-md transition-colors ${item.tipoEntrega === 'casa' ? 'bg-zenkai-surface text-zenkai-neonBlue border border-zenkai-border' : 'text-zenkai-textMuted'}`}
