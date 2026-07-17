@@ -7,6 +7,37 @@ export const api = {
     return response.json();
   },
 
+  criarProduto: async (formData) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${BASE_URL}/produtos/cadastro`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+        // IMPORTANTE: Ao usar FormData com fetch, NÃO defina o 'Content-Type'. 
+        // O próprio navegador cuida de configurar como 'multipart/form-data' e adiciona o 'boundary' correto.
+      },
+      body: formData
+    });
+    
+    if (!response.ok) throw new Error('Erro ao cadastrar produto');
+    return response.json();
+  },
+
+  checkout: async (pedido) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${BASE_URL}/checkout`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      },
+      body: JSON.stringify(pedido)
+    });
+    
+    if (!response.ok) throw new Error('Erro ao processar o checkout');
+    return response.json();
+  },
+
   login: async (email, senha) => {
     const response = await fetch(`${BASE_URL}/login`, {
       method: 'POST',
@@ -17,7 +48,6 @@ export const api = {
     if (!response.ok) throw new Error('Credenciais inválidas');
     const data = await response.json();
     
-    // Salva a sessão do usuário
     localStorage.setItem('token', data.token);
     localStorage.setItem('role', data.role);
     localStorage.setItem('nome', data.nome);

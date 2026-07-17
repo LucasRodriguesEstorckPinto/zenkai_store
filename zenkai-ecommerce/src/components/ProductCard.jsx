@@ -1,16 +1,16 @@
-
 import { ShoppingCart } from 'lucide-react';
 
 export default function ProductCard({ produto, onAdicionar }) {
   return (
     <div className="bg-zenkai-surface border border-zenkai-border rounded-xl overflow-hidden flex flex-col transition-transform hover:scale-[1.02] hover:border-zenkai-neonBlue/50 duration-300">
       
-      {/* Imagem do Produto (Aqui entrarão as fotos da pasta assets no futuro) */}
       <div className="h-48 bg-[#111] flex items-center justify-center p-4 relative">
+        {/* AQUI ESTÁ A MUDANÇA DA IMAGEM: Apontando para o backend e com fallback */}
         <img 
-          src={produto.imagem_url} 
+          src={produto.imagem ? `http://127.0.0.1:8000/static/img/${produto.imagem}` : 'https://via.placeholder.com/300?text=Sem+Imagem'} 
           alt={produto.nome} 
           className="max-h-full object-contain drop-shadow-2xl"
+          onError={(e) => { e.target.src = 'https://via.placeholder.com/300?text=Erro+na+Imagem' }}
         />
         {/* Badge de Categoria */}
         <span className="absolute top-3 left-3 bg-black/60 text-zenkai-textMuted text-xs px-2 py-1 rounded border border-zenkai-border">
