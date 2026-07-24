@@ -1,16 +1,35 @@
 import { useState, useEffect } from 'react';
 import { ShoppingBag, X, LogOut, CheckCircle2 } from 'lucide-react';
 import { api } from '../services/api';
-import { useNavigate } from 'react-router-dom';
-import ProductCard from '../components/ProductCard.jsx';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function LojaCliente() {
   const [produtos, setProdutos] = useState([]);
-  const [carrinho, setCarrinho] = useState([]);
+  
+  // INICIALIZA O CARRINHO COM OS DADOS SALVOS NO NAVEGADOR
+  const [carrinho, setCarrinho] = useState(() => {
+    const carrinhoSalvo = localStorage.getItem('@zenkai-cart');
+    return carrinhoSalvo ? JSON.parse(carrinhoSalvo) : [];
+  });
+  
   const [isCarrinhoOpen, setIsCarrinhoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
+  
+  const [prodParaAdicionar, setProdParaAdicionar] = useState(null);
+  
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // SALVA O CARRINHO AUTOMATICAMENTE NO NAVEGADOR SEMPRE QUE SOFRER ALTERAÇÃO
+  useEffect(() => {
+    localStorage.setItem('@zenkai-cart', JSON.stringify(carrinho));
+  }, [carrinho]);
+
+  // ABRE O CARRINHO AUTOMATICAMENTE SE VOLTAR DA TELA DE DETALHES
+  useEffect(() => {
+    if (location.state?.abrirCarrinho) setIsCarrinhoOpen(true);
+  }, [location]);
 
   const carregarDados = async () => {
     try {
@@ -25,19 +44,22 @@ export default function LojaCliente() {
 
   useEffect(() => { carregarDados(); }, []);
 
-  const addCarrinho = (prod) => {
-    const existe = carrinho.find(i => i.id === prod.id);
+  const confirmarTamanho = (prod, tamanho) => {
+    const idCarrinho = `${prod.id}-${tamanho}`;
+    const existe = carrinho.find(i => i.idCarrinho === idCarrinho);
+    
     if (existe) {
-      setCarrinho(carrinho.map(i => i.id === prod.id ? { ...i, qtd: i.qtd + 1 } : i));
+      setCarrinho(carrinho.map(i => i.idCarrinho === idCarrinho ? { ...i, qtd: i.qtd + 1 } : i));
     } else {
-      setCarrinho([...carrinho, { ...prod, idCarrinho: Date.now(), qtd: 1 }]);
+      setCarrinho([...carrinho, { ...prod, idCarrinho, tamanho, qtd: 1 }]);
     }
+    setProdParaAdicionar(null);
     setIsCarrinhoOpen(true);
   };
 
-  const updateQtd = (id, delta) => {
+  const updateQtd = (idCarrinho, delta) => {
     setCarrinho(carrinho.map(i => {
-      if (i.idCarrinho === id) {
+      if (i.idCarrinho === idCarrinho) {
         const n = i.qtd + delta;
         return { ...i, qtd: n > 0 ? n : 1 };
       }
@@ -52,15 +74,15 @@ export default function LojaCliente() {
     try {
       await api.checkout({
         total,
-        itens: carrinho.map(i => ({ produto_id: i.id, quantidade: i.qtd, preco_unitario: i.preco }))
+        itens: carrinho.map(i => ({ produto_id: i.id, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco }))
       });
       alert('Sucesso! Transação registrada na Blockchain da loja.');
-      setCarrinho([]);
+      setCarrinho([]); // Esvazia o carrinho
+      localStorage.removeItem('@zenkai-cart'); // Limpa o cache do navegador
       setIsCarrinhoOpen(false);
-      carregarDados(); // UX MÁXIMA: Recarrega a vitrine na hora.
+      carregarDados();
     } catch (error) {
-      alert('Sessão expirada. Por favor, faça login novamente.');
-      api.logout(); navigate('/');
+      alert(error.message || 'Erro ao finalizar pedido.');
     } finally {
       setProcessando(false);
     }
@@ -99,7 +121,11 @@ export default function LojaCliente() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {produtos.map(p => (
-              <div key={p.id} className="bg-[#161920] border border-white/5 rounded-2xl overflow-hidden hover:border-[#00e5ff]/30 transition-all hover:shadow-2xl hover:shadow-[#00e5ff]/5 group flex flex-col h-full">
+              <div 
+                key={p.id} 
+                onClick={() => navigate(`/produto/${p.id}`)}
+                className="bg-[#161920] border border-white/5 rounded-2xl overflow-hidden hover:border-[#00e5ff]/30 transition-all hover:shadow-2xl hover:shadow-[#00e5ff]/5 group flex flex-col h-full cursor-pointer"
+              >
                 <div className="h-48 bg-black flex items-center justify-center overflow-hidden">
                    <img src={p.imagem || 'https://via.placeholder.com/200'} alt={p.nome} className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"/>
                 </div>
@@ -108,13 +134,16 @@ export default function LojaCliente() {
                   <h3 className="font-bold text-lg mb-1 leading-tight flex-1">{p.nome}</h3>
                   <div className="flex justify-between items-end mt-4">
                     <div>
-                      <p className="text-xs text-gray-400 mb-1">Restam: {p.estoque}</p>
+                      <p className="text-xs text-gray-400 mb-1">Total Disp: {p.estoque}</p>
                       <p className="text-[#00e5ff] font-mono text-xl font-bold">R$ {p.preco.toFixed(2)}</p>
                     </div>
                     <button 
                       disabled={p.estoque === 0}
-                      onClick={() => addCarrinho(p)} 
-                      className="bg-[#00e5ff]/10 text-[#00e5ff] hover:bg-[#00e5ff] hover:text-black p-3 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setProdParaAdicionar(p);
+                      }} 
+                      className="bg-[#00e5ff]/10 text-[#00e5ff] hover:bg-[#00e5ff] hover:text-black p-3 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed z-10"
                     >
                       <ShoppingBag size={20} />
                     </button>
@@ -156,6 +185,7 @@ export default function LojaCliente() {
                 </button>
                 <div className="pr-6 mb-3">
                   <p className="font-bold text-sm text-gray-200">{i.nome}</p>
+                  <p className="text-xs text-gray-400 mt-1">Tam: <span className="text-white font-bold">{i.tamanho}</span></p>
                   <p className="text-[#00e5ff] font-mono text-sm mt-1">R$ {i.preco.toFixed(2)}</p>
                 </div>
                 <div className="flex items-center justify-between bg-black/40 rounded-xl p-1 border border-white/5">
@@ -181,6 +211,34 @@ export default function LojaCliente() {
           </button>
         </div>
       </div>
+
+      {/* MODAL DE TAMANHO EXPRESS CLIENTE */}
+      {prodParaAdicionar && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setProdParaAdicionar(null)}>
+          <div className="bg-[#161920] border border-[#00e5ff]/20 p-6 rounded-3xl w-full max-w-sm shadow-[0_0_50px_rgba(0,229,255,0.1)]" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="font-bold text-lg leading-tight">{prodParaAdicionar.nome}</h3>
+                <p className="text-[#00e5ff] font-mono mt-1">R$ {prodParaAdicionar.preco.toFixed(2)}</p>
+              </div>
+              <button onClick={() => setProdParaAdicionar(null)} className="text-gray-400 hover:text-white bg-white/5 p-2 rounded-full"><X size={16}/></button>
+            </div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Escolha o Tamanho</p>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.entries(prodParaAdicionar.tamanhos).map(([tam, qtd]) => (
+                <button 
+                  key={tam} 
+                  disabled={qtd === 0}
+                  onClick={() => confirmarTamanho(prodParaAdicionar, tam)}
+                  className="py-3 rounded-xl border border-white/10 font-mono font-bold hover:border-[#00e5ff] hover:text-[#00e5ff] hover:bg-[#00e5ff]/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed bg-black/50"
+                >
+                  {tam}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

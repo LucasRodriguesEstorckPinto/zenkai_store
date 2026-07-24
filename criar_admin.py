@@ -1,10 +1,9 @@
 import sqlite3
 import bcrypt
 
-conn = sqlite3.connect("database.db")
+conn = sqlite3.connect("zenkai_database.db")
 cursor = conn.cursor()
 
-# Criptografando a senha do Admin
 senha_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 try:

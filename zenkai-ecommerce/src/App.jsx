@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import LojaCliente from './pages/LojaCliente';
 import PdvVendedor from './pages/PdvVendedor';
+import ProdutoDetalhe from './pages/ProdutoDetalhe'; // <-- Importação da nova tela
 
 // Componente "Guarda de Rota" para proteger o acesso
 const ProtectedRoute = ({ children, requiredRole }) => {
@@ -36,6 +37,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <LojaCliente />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Rota de Detalhes do Produto: Acessível para usuários logados */}
+          <Route 
+            path="/produto/:id" 
+            element={
+              <ProtectedRoute>
+                <ProdutoDetalhe />
               </ProtectedRoute>
             } 
           />

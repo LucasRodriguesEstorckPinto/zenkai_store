@@ -2,11 +2,17 @@ const BASE_URL = 'http://localhost:8000/zenkai/api';
 
 const getAuth = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
 
+const parseProduto = (p) => ({
+  ...p, 
+  tamanhos: p.tamanhos ? JSON.parse(p.tamanhos) : {}
+});
+
 export const api = {
   getProdutos: async () => {
     const res = await fetch(`${BASE_URL}/produtos`);
     if (!res.ok) throw new Error('Erro ao carregar');
-    return res.json();
+    const data = await res.json();
+    return data.map(parseProduto);
   },
 
   criarProduto: async (formData) => {
@@ -29,7 +35,17 @@ export const api = {
       headers: { ...getAuth(), 'Content-Type': 'application/json' },
       body: JSON.stringify(pedido)
     });
-    if (!res.ok) throw new Error('Erro no checkout (Sessão inválida?)');
+    if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'Erro no checkout');
+    }
+    return res.json();
+  },
+
+  // NOVA FUNÇÃO: Busca de Clientes
+  buscarClientes: async (query) => {
+    const res = await fetch(`${BASE_URL}/clientes/buscar?q=${query}`, { headers: getAuth() });
+    if (!res.ok) return [];
     return res.json();
   },
 
@@ -47,5 +63,12 @@ export const api = {
 
   logout: () => {
     localStorage.clear();
+  },
+
+  getProduto: async (id) => {
+    const res = await fetch(`${BASE_URL}/produtos/${id}`);
+    if (!res.ok) throw new Error('Produto não encontrado');
+    const data = await res.json();
+    return parseProduto(data);
   }
 };
