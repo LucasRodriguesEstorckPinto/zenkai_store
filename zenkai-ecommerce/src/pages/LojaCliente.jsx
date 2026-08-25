@@ -65,7 +65,7 @@ export default function LojaCliente() {
         
         // REDIRECIONA PARA O PDV SE FOR ADMIN
         if (data.role === 'ADMIN') {
-          navigate('/pdv'); // <-- Ajuste aqui se a sua rota do PDV for diferente no App.jsx
+          navigate('/pdv');
           return;
         }
       } else {

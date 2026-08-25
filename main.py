@@ -299,7 +299,7 @@ async def finalizar_compra(pedido: CheckoutPayload, user=Depends(get_user_from_t
     finally: conn.close()
     return {"message": "Compra finalizada!"}
 
-# --- ROTAS DA ÁREA DO CLIENTE (PREPARAÇÃO PARA A PARTE 2) ---
+# --- ROTAS DA ÁREA DO CLIENTE ---
 @api_router.get('/perfil/meus-pedidos')
 async def meus_pedidos(user=Depends(get_user_from_token)):
     conn = get_db()

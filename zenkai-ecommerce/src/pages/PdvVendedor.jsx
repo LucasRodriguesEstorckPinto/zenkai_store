@@ -28,7 +28,7 @@ export default function PdvVendedor() {
   const [formCliente, setFormCliente] = useState({ nome: '', email: '', telefone: '' });
   const [dashData, setDashData] = useState(null);
 
-  // ESTADO DE EDIÇÃO (CRUD Completo)
+  // ESTADO DE EDIÇÃO
   const [produtoEditando, setProdutoEditando] = useState(null);
 
   const nav = useNavigate();
@@ -249,7 +249,7 @@ export default function PdvVendedor() {
           </div>
         )}
 
-        {/* ABA: ESTOQUE (CRUD COMPLETO) */}
+        {/* ABA: ESTOQUE*/}
         {aba === 'estoque' && (
           <div className="h-full flex flex-col pb-4">
             <h2 className="text-2xl font-black mb-6 text-[#39ff14] flex items-center gap-3"><Package/> GERENCIADOR</h2>
@@ -306,7 +306,7 @@ export default function PdvVendedor() {
         )}
       </main>
 
-      {/* CARRINHO LATERAL (Oculto nas outras abas para dar espaço ao histórico/dash) */}
+      {/* CARRINHO LATERAL */}
       {aba === 'venda' && (
         <section className="w-96 bg-[#161920] border-l border-white/10 flex flex-col shadow-2xl z-20">
           <div className="h-20 flex items-center px-6 bg-[#0f1115] border-b border-white/10"><h2 className="font-black text-lg flex items-center gap-3"><ShoppingCart className="text-[#39ff14]"/> PDV CHECKOUT</h2></div>
