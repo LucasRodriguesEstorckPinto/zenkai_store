@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft } from 'lucide-react';
+import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft, LogIn } from 'lucide-react';
 import { api } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function LojaCliente() {
-  const [view, setView] = useState('vitrine'); // 'vitrine' ou 'perfil'
+  const [view, setView] = useState('vitrine'); 
   const [produtos, setProdutos] = useState([]);
   
-  // INICIALIZA O CARRINHO COM O LOCALSTORAGE
+  // VERIFICA SE O USUÁRIO ESTÁ LOGADO
+  const [isLogged, setIsLogged] = useState(!!localStorage.getItem('token'));
+  
   const [carrinho, setCarrinho] = useState(() => {
     const carrinhoSalvo = localStorage.getItem('@zenkai-cart');
     return carrinhoSalvo ? JSON.parse(carrinhoSalvo) : [];
@@ -16,29 +18,27 @@ export default function LojaCliente() {
   const [isCarrinhoOpen, setIsCarrinhoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
-  
   const [prodParaAdicionar, setProdParaAdicionar] = useState(null);
   
-  // ESTADOS DO PERFIL DO CLIENTE
+  // ESTADOS DO PERFIL
   const [meusPedidos, setMeusPedidos] = useState([]);
   const [perfilForm, setPerfilForm] = useState({ nome: '', telefone: '', endereco: '' });
   const [loadingPerfil, setLoadingPerfil] = useState(false);
 
+  // ESTADOS DE AUTENTICAÇÃO (LOGIN / CADASTRO NO CHECKOUT)
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' ou 'cadastro'
+  const [authForm, setAuthForm] = useState({ nome: '', email: '', telefone: '', senha: '' });
+  const [loadingAuth, setLoadingAuth] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    localStorage.setItem('@zenkai-cart', JSON.stringify(carrinho));
-  }, [carrinho]);
-
-  useEffect(() => {
-    if (location.state?.abrirCarrinho) setIsCarrinhoOpen(true);
-  }, [location]);
+  useEffect(() => { localStorage.setItem('@zenkai-cart', JSON.stringify(carrinho)); }, [carrinho]);
+  useEffect(() => { if (location.state?.abrirCarrinho) setIsCarrinhoOpen(true); }, [location]);
 
   const carregarDadosVitrine = async () => {
-    try { setProdutos(await api.getProdutos()); } 
-    catch (err) { console.error(err); } 
-    finally { setLoading(false); }
+    try { setProdutos(await api.getProdutos()); } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   const carregarDadosPerfil = async () => {
@@ -46,31 +46,56 @@ export default function LojaCliente() {
     try {
       const dados = await api.getPerfil();
       setPerfilForm({ nome: dados.nome || '', telefone: dados.telefone || '', endereco: dados.endereco || '' });
-      const peds = await api.getMeusPedidos();
-      setMeusPedidos(peds);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingPerfil(false);
-    }
+      setMeusPedidos(await api.getMeusPedidos());
+    } catch (err) { console.error(err); } finally { setLoadingPerfil(false); }
   };
 
   useEffect(() => { 
     if (view === 'vitrine') carregarDadosVitrine();
-    if (view === 'perfil') carregarDadosPerfil();
-  }, [view]);
+    if (view === 'perfil' && isLogged) carregarDadosPerfil();
+  }, [view, isLogged]);
+
+  // FUNÇÃO DE AUTENTICAÇÃO INTERCEPTADORA
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setLoadingAuth(true);
+    try {
+      if (authMode === 'login') {
+        const data = await api.login(authForm.email, authForm.senha);
+        
+        // REDIRECIONA PARA O PDV SE FOR ADMIN
+        if (data.role === 'ADMIN') {
+          navigate('/pdv'); // <-- Ajuste aqui se a sua rota do PDV for diferente no App.jsx
+          return;
+        }
+      } else {
+        // FLUXO DE CRIAR CONTA E JÁ LOGAR
+        await api.cadastrarCliente({ nome: authForm.nome, email: authForm.email, senha: authForm.senha, telefone: authForm.telefone, role: 'CLIENTE' });
+        await api.login(authForm.email, authForm.senha);
+      }
+      
+      setIsLogged(true);
+      setShowAuthModal(false);
+      setAuthForm({ nome: '', email: '', telefone: '', senha: '' });
+      
+      // Se ele logou com o carrinho aberto, finaliza a compra automaticamente pra ele!
+      if (isCarrinhoOpen && carrinho.length > 0) {
+        finalizar();
+      }
+
+    } catch (err) {
+      alert(err.message || 'Erro na autenticação.');
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
 
   const atualizarMeuPerfil = async (e) => {
     e.preventDefault();
     setLoadingPerfil(true);
-    try {
-      await api.atualizarPerfil(perfilForm);
-      alert('Seus dados foram atualizados com sucesso!');
-    } catch (err) {
-      alert('Erro ao atualizar: ' + err.message);
-    } finally {
-      setLoadingPerfil(false);
-    }
+    try { await api.atualizarPerfil(perfilForm); alert('Dados atualizados!'); } 
+    catch (err) { alert('Erro ao atualizar: ' + err.message); } 
+    finally { setLoadingPerfil(false); }
   };
 
   const confirmarTamanho = (prod, tamanho) => {
@@ -83,27 +108,30 @@ export default function LojaCliente() {
   };
 
   const updateQtd = (idCarrinho, delta) => {
-    setCarrinho(carrinho.map(i => {
-      if (i.idCarrinho === idCarrinho) return { ...i, qtd: Math.max(1, i.qtd + delta) };
-      return i;
-    }));
+    setCarrinho(carrinho.map(i => { if (i.idCarrinho === idCarrinho) return { ...i, qtd: Math.max(1, i.qtd + delta) }; return i; }));
   };
 
   const total = carrinho.reduce((acc, i) => acc + (i.preco * i.qtd), 0);
 
   const finalizar = async () => {
+    // 1. BARREIRA DE AUTENTICAÇÃO ANTES DE COMPRAR
+    if (!localStorage.getItem('token')) {
+      setAuthMode('login');
+      setShowAuthModal(true);
+      return;
+    }
+
     setProcessando(true);
     try {
-      // Captura o ID do cliente logado diretamente do Token JWT salvo no navegador
       const token = localStorage.getItem('token');
       const tokenData = token ? JSON.parse(atob(token.split('.')[1])) : null;
 
       await api.checkout({
         total,
-        cliente_id: tokenData?.id, // Garante que a compra online vincule ao usuário atual
+        cliente_id: tokenData?.id,
         itens: carrinho.map(i => ({ produto_id: i.id, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco }))
       });
-      alert('Compra confirmada! Você pode acompanhar o status na sua área "Minha Conta".');
+      alert('Compra confirmada! Acompanhe o status na sua área "Minha Conta".');
       setCarrinho([]); 
       localStorage.removeItem('@zenkai-cart'); 
       setIsCarrinhoOpen(false);
@@ -117,7 +145,7 @@ export default function LojaCliente() {
 
   return (
     <div className="min-h-screen pb-10 text-white bg-[#0f1115] font-sans selection:bg-[#00e5ff]/30">
-      {/* HEADER GLOBAL */}
+      
       <header className="sticky top-0 z-40 bg-[#0f1115]/90 backdrop-blur-md border-b border-white/10 shadow-lg">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -132,9 +160,21 @@ export default function LojaCliente() {
           </div>
           
           <div className="flex gap-4 items-center">
-            <button onClick={() => setView(view === 'vitrine' ? 'perfil' : 'vitrine')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm ${view === 'perfil' ? 'bg-[#00e5ff]/10 text-[#00e5ff]' : 'text-gray-300 hover:bg-white/5'}`}>
-              <User size={20} /> <span className="hidden sm:block">Minha Conta</span>
-            </button>
+            {/* RENDERIZAÇÃO CONDICIONAL DE BOTÕES DO HEADER */}
+            {isLogged ? (
+              <>
+                <button onClick={() => setView(view === 'vitrine' ? 'perfil' : 'vitrine')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm ${view === 'perfil' ? 'bg-[#00e5ff]/10 text-[#00e5ff]' : 'text-gray-300 hover:bg-white/5'}`}>
+                  <User size={20} /> <span className="hidden sm:block">Minha Conta</span>
+                </button>
+                <button onClick={() => { api.logout(); setIsLogged(false); setView('vitrine'); }} className="text-red-400 hover:text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors">
+                  <LogOut size={22} />
+                </button>
+              </>
+            ) : (
+              <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); }} className="flex items-center gap-2 px-5 py-2 bg-[#00e5ff] text-black font-black rounded-xl hover:bg-white transition-all shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+                <LogIn size={18}/> ENTRAR
+              </button>
+            )}
             
             <button onClick={() => setIsCarrinhoOpen(true)} className="relative p-2 text-gray-300 hover:text-[#00e5ff] transition-all bg-white/5 hover:bg-[#00e5ff]/10 rounded-xl">
               <ShoppingBag size={22} />
@@ -144,15 +184,10 @@ export default function LojaCliente() {
                 </span>
               )}
             </button>
-            
-            <button onClick={() => { api.logout(); navigate('/'); }} className="text-red-400 hover:text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors">
-              <LogOut size={22} />
-            </button>
           </div>
         </div>
       </header>
 
-      {/* RENDERIZAÇÃO CONDICIONAL: VITRINE vs PERFIL */}
       <main className="max-w-7xl mx-auto px-6 mt-12">
         {view === 'vitrine' ? (
           <>
@@ -261,7 +296,7 @@ export default function LojaCliente() {
       </main>
 
       {/* OVERLAY E GAVETA DO CARRINHO */}
-      <div className={`fixed inset-0 bg-black/80 z-50 transition-opacity duration-300 ${isCarrinhoOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`} onClick={() => setIsCarrinhoOpen(false)} />
+      <div className={`fixed inset-0 bg-black/80 z-40 transition-opacity duration-300 ${isCarrinhoOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`} onClick={() => setIsCarrinhoOpen(false)} />
       
       <div className={`fixed inset-y-0 right-0 w-full max-w-md bg-[#161920] border-l border-white/10 z-50 transform transition-transform duration-300 flex flex-col shadow-2xl ${isCarrinhoOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="h-20 border-b border-white/10 flex items-center justify-between px-6 bg-[#0f1115]">
@@ -295,7 +330,7 @@ export default function LojaCliente() {
         </div>
       </div>
 
-      {/* MODAL DE TAMANHO EXPRESS CLIENTE */}
+      {/* MODAL DE TAMANHO EXPRESS */}
       {prodParaAdicionar && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setProdParaAdicionar(null)}>
           <div className="bg-[#161920] border border-[#00e5ff]/20 p-6 rounded-3xl w-full max-w-sm shadow-[0_0_50px_rgba(0,229,255,0.1)]" onClick={e => e.stopPropagation()}>
@@ -306,6 +341,50 @@ export default function LojaCliente() {
                 <button key={tam} disabled={qtd === 0} onClick={() => confirmarTamanho(prodParaAdicionar, tam)} className="py-3 rounded-xl border border-white/10 font-mono font-bold hover:border-[#00e5ff] hover:text-[#00e5ff] hover:bg-[#00e5ff]/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed bg-black/50">{tam}</button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE AUTENTICAÇÃO (LOGIN / CADASTRO) */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAuthModal(false)}>
+          <div className="bg-[#161920] border border-[#00e5ff]/30 p-8 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,229,255,0.1)] relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white"><X size={20}/></button>
+            
+            <div className="flex justify-center gap-6 mb-8 border-b border-white/10 pb-4">
+              <button onClick={() => setAuthMode('login')} className={`font-black text-lg transition-colors ${authMode === 'login' ? 'text-[#00e5ff]' : 'text-gray-500 hover:text-gray-300'}`}>LOGIN</button>
+              <button onClick={() => setAuthMode('cadastro')} className={`font-black text-lg transition-colors ${authMode === 'cadastro' ? 'text-[#00e5ff]' : 'text-gray-500 hover:text-gray-300'}`}>CRIAR CONTA</button>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              {authMode === 'cadastro' && (
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase">Nome Completo</label>
+                  <input required type="text" value={authForm.nome} onChange={e=>setAuthForm({...authForm, nome: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+                </div>
+              )}
+              
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
+                <input required type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm, email: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+              </div>
+
+              {authMode === 'cadastro' && (
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase">Telefone / WhatsApp</label>
+                  <input required type="text" value={authForm.telefone} onChange={e=>setAuthForm({...authForm, telefone: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white font-mono" />
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase">Senha</label>
+                <input required type="password" value={authForm.senha} onChange={e=>setAuthForm({...authForm, senha: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+              </div>
+
+              <button disabled={loadingAuth} type="submit" className="w-full bg-[#00e5ff] text-black font-black py-4 rounded-xl hover:bg-white transition-all disabled:opacity-50 mt-6 shadow-[0_0_15px_rgba(0,229,255,0.2)] hover:shadow-[0_0_25px_rgba(0,229,255,0.5)]">
+                {loadingAuth ? 'AGUARDE...' : (authMode === 'login' ? 'ACESSAR MINHA CONTA' : 'FINALIZAR CADASTRO')}
+              </button>
+            </form>
           </div>
         </div>
       )}
