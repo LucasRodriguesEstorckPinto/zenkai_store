@@ -27,11 +27,11 @@ os.makedirs("static/img", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 api_router = APIRouter(prefix='/zenkai/api')
-SECRET_KEY = "sua_chave_secreta_super_segura_32_bytes"
+SECRET_KEY = "bd8196f1b82be24141ce28449f545c473d6f4d6154d082a837d910162f430c06"
 security = HTTPBearer()
 DB_PATH = "zenkai_database.db"
 
-# A função init_db() continua idêntica, chamando as tabelas...
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
