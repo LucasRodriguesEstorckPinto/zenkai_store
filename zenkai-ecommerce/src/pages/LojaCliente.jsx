@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft, LogIn } from 'lucide-react';
+import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft, LogIn, Truck, Store } from 'lucide-react';
 import { api } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function LojaCliente() {
   const [view, setView] = useState('vitrine'); 
   const [produtos, setProdutos] = useState([]);
-  
-  // VERIFICA SE O USUÁRIO ESTÁ LOGADO
   const [isLogged, setIsLogged] = useState(!!localStorage.getItem('token'));
   
   const [carrinho, setCarrinho] = useState(() => {
@@ -20,15 +18,21 @@ export default function LojaCliente() {
   const [processando, setProcessando] = useState(false);
   const [prodParaAdicionar, setProdParaAdicionar] = useState(null);
   
+  // ESTADOS DE FRETE NO CARRINHO
+  const [tipoEntrega, setTipoEntrega] = useState('retirada');
+  const [cepCalc, setCepCalc] = useState('');
+  const [valorFrete, setValorFrete] = useState(0);
+  const [loadingFrete, setLoadingFrete] = useState(false); // NOVO ESTADO
+
   // ESTADOS DO PERFIL
   const [meusPedidos, setMeusPedidos] = useState([]);
   const [perfilForm, setPerfilForm] = useState({ nome: '', telefone: '', endereco: '' });
   const [loadingPerfil, setLoadingPerfil] = useState(false);
 
-  // ESTADOS DE AUTENTICAÇÃO (LOGIN / CADASTRO NO CHECKOUT)
+  // ESTADOS DE AUTENTICAÇÃO (Cadastro de Endereço)
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' ou 'cadastro'
-  const [authForm, setAuthForm] = useState({ nome: '', email: '', telefone: '', senha: '' });
+  const [authMode, setAuthMode] = useState('login'); 
+  const [authForm, setAuthForm] = useState({ nome: '', email: '', telefone: '', senha: '', cep: '', enderecoDetalhado: '' });
   const [loadingAuth, setLoadingAuth] = useState(false);
 
   const navigate = useNavigate();
@@ -55,39 +59,85 @@ export default function LojaCliente() {
     if (view === 'perfil' && isLogged) carregarDadosPerfil();
   }, [view, isLogged]);
 
-  // FUNÇÃO DE AUTENTICAÇÃO INTERCEPTADORA
+  // CALCULAR VALORES DO CARRINHO
+  const totalItens = carrinho.reduce((acc, i) => acc + (i.preco * i.qtd), 0);
+  const totalFinal = totalItens + valorFrete;
+
+  // NOVA FUNÇÃO: SIMULAR FRETE COM VIACEP
+  const simularFrete = async () => {
+    if (cepCalc.length !== 8) {
+      return alert('Por favor, digite um CEP válido com 8 números (somente números).');
+    }
+
+    setLoadingFrete(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepCalc}/json/`);
+      const data = await response.json();
+
+      if (data.erro) {
+        alert('CEP não localizado nas bases dos Correios.');
+        setValorFrete(0);
+        return;
+      }
+
+      // Regra de Negócio baseada na região (Sede no RJ)
+      let precoCalculado = 35.90; // Padrão Nacional
+      
+      if (data.uf === 'RJ') {
+        precoCalculado = 15.90; // Frete Local
+      } else if (['SP', 'MG', 'ES'].includes(data.uf)) {
+        precoCalculado = 22.90; // Frete Regional (Sudeste)
+      }
+
+      setValorFrete(precoCalculado);
+      
+      // Atualiza o endereço detalhado do cliente automaticamente se for para criar conta
+      if (authMode === 'cadastro') {
+        setAuthForm(prev => ({ 
+          ...prev, 
+          enderecoDetalhado: `${data.logradouro}, Bairro ${data.bairro}, ${data.localidade} - ${data.uf}` 
+        }));
+      }
+
+      alert(`Entrega para: ${data.localidade} - ${data.uf}\nValor do Frete: R$ ${precoCalculado.toFixed(2)}`);
+
+    } catch (error) {
+      alert('Serviço de cálculo de frete indisponível no momento.');
+    } finally {
+      setLoadingFrete(false);
+    }
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setLoadingAuth(true);
     try {
       if (authMode === 'login') {
         const data = await api.login(authForm.email, authForm.senha);
-        
-        // REDIRECIONA PARA O PDV SE FOR ADMIN
         if (data.role === 'ADMIN') {
           navigate('/pdv');
           return;
         }
       } else {
-        // FLUXO DE CRIAR CONTA E JÁ LOGAR
-        await api.cadastrarCliente({ nome: authForm.nome, email: authForm.email, senha: authForm.senha, telefone: authForm.telefone, role: 'CLIENTE' });
+        const enderecoCompleto = `CEP: ${authForm.cep} | ${authForm.enderecoDetalhado}`;
+        await api.cadastrarCliente({ 
+          nome: authForm.nome, 
+          email: authForm.email, 
+          senha: authForm.senha, 
+          telefone: authForm.telefone, 
+          endereco: enderecoCompleto,
+          role: 'CLIENTE' 
+        });
         await api.login(authForm.email, authForm.senha);
       }
       
       setIsLogged(true);
       setShowAuthModal(false);
-      setAuthForm({ nome: '', email: '', telefone: '', senha: '' });
+      setAuthForm({ nome: '', email: '', telefone: '', senha: '', cep: '', enderecoDetalhado: '' });
       
-      // Se ele logou com o carrinho aberto, finaliza a compra automaticamente pra ele!
-      if (isCarrinhoOpen && carrinho.length > 0) {
-        finalizar();
-      }
-
-    } catch (err) {
-      alert(err.message || 'Erro na autenticação.');
-    } finally {
-      setLoadingAuth(false);
-    }
+      if (isCarrinhoOpen && carrinho.length > 0) finalizar();
+    } catch (err) { alert(err.message || 'Erro na autenticação.'); } 
+    finally { setLoadingAuth(false); }
   };
 
   const atualizarMeuPerfil = async (e) => {
@@ -98,26 +148,19 @@ export default function LojaCliente() {
     finally { setLoadingPerfil(false); }
   };
 
-  const confirmarTamanho = (prod, tamanho) => {
-    const idCarrinho = `${prod.id}-${tamanho}`;
-    const existe = carrinho.find(i => i.idCarrinho === idCarrinho);
-    if (existe) setCarrinho(carrinho.map(i => i.idCarrinho === idCarrinho ? { ...i, qtd: i.qtd + 1 } : i));
-    else setCarrinho([...carrinho, { ...prod, idCarrinho, tamanho, qtd: 1 }]);
-    setProdParaAdicionar(null);
-    setIsCarrinhoOpen(true);
-  };
-
   const updateQtd = (idCarrinho, delta) => {
     setCarrinho(carrinho.map(i => { if (i.idCarrinho === idCarrinho) return { ...i, qtd: Math.max(1, i.qtd + delta) }; return i; }));
   };
 
-  const total = carrinho.reduce((acc, i) => acc + (i.preco * i.qtd), 0);
-
   const finalizar = async () => {
-    // 1. BARREIRA DE AUTENTICAÇÃO ANTES DE COMPRAR
     if (!localStorage.getItem('token')) {
       setAuthMode('login');
       setShowAuthModal(true);
+      return;
+    }
+
+    if (tipoEntrega === 'entrega' && valorFrete === 0) {
+      alert("Por favor, calcule o frete antes de finalizar o pedido.");
       return;
     }
 
@@ -127,20 +170,19 @@ export default function LojaCliente() {
       const tokenData = token ? JSON.parse(atob(token.split('.')[1])) : null;
 
       await api.checkout({
-        total,
+        total: totalFinal, 
         cliente_id: tokenData?.id,
-        itens: carrinho.map(i => ({ produto_id: i.id, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco }))
+        itens: carrinho.map(i => ({ produto_id: i.id, cor: i.cor, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco }))
       });
+      
       alert('Compra confirmada! Acompanhe o status na sua área "Minha Conta".');
       setCarrinho([]); 
       localStorage.removeItem('@zenkai-cart'); 
       setIsCarrinhoOpen(false);
+      setValorFrete(0);
       carregarDadosVitrine();
-    } catch (error) {
-      alert(error.message || 'Erro ao finalizar pedido.');
-    } finally {
-      setProcessando(false);
-    }
+    } catch (error) { alert(error.message || 'Erro ao finalizar pedido.'); } 
+    finally { setProcessando(false); }
   };
 
   return (
@@ -160,7 +202,6 @@ export default function LojaCliente() {
           </div>
           
           <div className="flex gap-4 items-center">
-            {/* RENDERIZAÇÃO CONDICIONAL DE BOTÕES DO HEADER */}
             {isLogged ? (
               <>
                 <button onClick={() => setView(view === 'vitrine' ? 'perfil' : 'vitrine')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-sm ${view === 'perfil' ? 'bg-[#00e5ff]/10 text-[#00e5ff]' : 'text-gray-300 hover:bg-white/5'}`}>
@@ -210,12 +251,8 @@ export default function LojaCliente() {
                       <h3 className="font-bold text-lg mb-1 leading-tight flex-1">{p.nome}</h3>
                       <div className="flex justify-between items-end mt-4">
                         <div>
-                          <p className="text-xs text-gray-400 mb-1">Grade: {p.estoque} unid.</p>
                           <p className="text-[#00e5ff] font-mono text-xl font-bold">R$ {p.preco.toFixed(2)}</p>
                         </div>
-                        <button disabled={p.estoque === 0} onClick={(e) => { e.stopPropagation(); setProdParaAdicionar(p); }} className="bg-[#00e5ff]/10 text-[#00e5ff] hover:bg-[#00e5ff] hover:text-black p-3 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed z-10">
-                          <ShoppingBag size={20} />
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -225,7 +262,6 @@ export default function LojaCliente() {
           </>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* LADO ESQUERDO: DADOS DO PERFIL */}
             <div className="lg:col-span-1">
               <div className="bg-[#161920] p-6 rounded-3xl border border-white/10 shadow-2xl">
                 <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2"><User className="text-[#00e5ff]"/> MEUS DADOS</h3>
@@ -249,11 +285,9 @@ export default function LojaCliente() {
               </div>
             </div>
 
-            {/* LADO DIREITO: HISTÓRICO DE PEDIDOS */}
             <div className="lg:col-span-2">
               <div className="bg-[#161920] p-6 rounded-3xl border border-white/10 shadow-2xl min-h-[500px]">
                 <h3 className="text-xl font-black mb-6 text-white flex items-center gap-2"><Package className="text-[#00e5ff]"/> MEUS PEDIDOS</h3>
-                
                 {loadingPerfil ? (
                   <div className="flex items-center justify-center h-40 text-[#00e5ff] font-mono animate-pulse">CARREGANDO HISTÓRICO...</div>
                 ) : meusPedidos.length === 0 ? (
@@ -279,8 +313,8 @@ export default function LojaCliente() {
                           {ped.itens.map((item, idx) => (
                             <div key={idx} className="flex items-center justify-between text-sm">
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-black rounded overflow-hidden border border-white/10"><img src={item.imagem || 'https://via.placeholder.com/32'} className="w-full h-full object-cover"/></div>
-                                <p className="text-gray-300"><span className="font-bold text-white">{item.qtd}x</span> {item.nome} (Tam: {item.tamanho})</p>
+                                <div className="w-10 h-10 bg-black rounded overflow-hidden border border-white/10"><img src={item.imagem || 'https://via.placeholder.com/40'} className="w-full h-full object-cover"/></div>
+                                <p className="text-gray-300"><span className="font-bold text-white">{item.qtd}x</span> {item.nome} <br/><span className="text-xs text-gray-500">Cor: {item.cor} | Tam: {item.tamanho}</span></p>
                               </div>
                             </div>
                           ))}
@@ -295,7 +329,7 @@ export default function LojaCliente() {
         )}
       </main>
 
-      {/* OVERLAY E GAVETA DO CARRINHO */}
+      {/* GAVETA DO CARRINHO */}
       <div className={`fixed inset-0 bg-black/80 z-40 transition-opacity duration-300 ${isCarrinhoOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`} onClick={() => setIsCarrinhoOpen(false)} />
       
       <div className={`fixed inset-y-0 right-0 w-full max-w-md bg-[#161920] border-l border-white/10 z-50 transform transition-transform duration-300 flex flex-col shadow-2xl ${isCarrinhoOpen ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -309,13 +343,26 @@ export default function LojaCliente() {
             <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4"><ShoppingBag size={48} className="opacity-20" /><p>Sua sacola está vazia.</p></div>
           ) : (
             carrinho.map(i => (
-              <div key={i.idCarrinho} className="bg-[#0f1115] p-4 rounded-2xl border border-white/5 relative group">
-                <button onClick={() => setCarrinho(carrinho.filter(x => x.idCarrinho !== i.idCarrinho))} className="absolute -top-2 -right-2 bg-red-500 text-white p-2 rounded-full shadow-lg hover:scale-110 transition-transform z-10"><X size={14} strokeWidth={3} /></button>
-                <div className="pr-6 mb-3"><p className="font-bold text-sm text-gray-200">{i.nome}</p><p className="text-xs text-gray-400 mt-1">Tam: <span className="text-white font-bold">{i.tamanho}</span></p><p className="text-[#00e5ff] font-mono text-sm mt-1">R$ {i.preco.toFixed(2)}</p></div>
-                <div className="flex items-center justify-between bg-black/40 rounded-xl p-1 border border-white/5">
-                  <button onClick={() => updateQtd(i.idCarrinho, -1)} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white">-</button>
-                  <span className="font-bold text-sm w-8 text-center">{i.qtd}</span>
-                  <button onClick={() => updateQtd(i.idCarrinho, 1)} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white">+</button>
+              <div key={i.idCarrinho} className="bg-[#0f1115] p-3 rounded-2xl border border-white/5 relative group flex gap-4">
+                <button onClick={() => setCarrinho(carrinho.filter(x => x.idCarrinho !== i.idCarrinho))} className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-lg hover:scale-110 transition-transform z-10"><X size={12} strokeWidth={3} /></button>
+                
+                <div className="w-20 h-20 bg-black rounded-xl border border-white/10 overflow-hidden flex-shrink-0">
+                  <img src={i.imagemVariante || i.imagem || 'https://via.placeholder.com/80'} alt={i.nome} className="w-full h-full object-cover"/>
+                </div>
+                
+                <div className="flex-1 flex flex-col justify-between py-1">
+                  <div>
+                    <p className="font-bold text-sm text-gray-200 leading-tight">{i.nome}</p>
+                    <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">{i.cor} | {i.tamanho}</p>
+                  </div>
+                  <div className="flex justify-between items-center">
+                     <p className="text-[#00e5ff] font-mono text-sm font-bold">R$ {i.preco.toFixed(2)}</p>
+                     <div className="flex items-center bg-black/40 rounded-lg p-1 border border-white/5">
+                        <button onClick={() => updateQtd(i.idCarrinho, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-white">-</button>
+                        <span className="font-bold text-xs w-6 text-center">{i.qtd}</span>
+                        <button onClick={() => updateQtd(i.idCarrinho, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-white">+</button>
+                     </div>
+                  </div>
                 </div>
               </div>
             ))
@@ -323,32 +370,41 @@ export default function LojaCliente() {
         </div>
 
         <div className="p-6 bg-[#0f1115] border-t border-white/10">
-          <div className="flex justify-between items-center mb-6"><span className="text-gray-400 text-sm uppercase tracking-wider">Subtotal</span><span className="font-bold font-mono text-2xl text-white">R$ {total.toFixed(2)}</span></div>
-          <button disabled={carrinho.length === 0 || processando} onClick={finalizar} className="w-full bg-[#00e5ff] text-black font-black py-4 rounded-xl hover:bg-white hover:shadow-[0_0_20px_rgba(0,229,255,0.4)] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2">
+          
+          {/* SIMULADOR DE FRETE */}
+          <div className="mb-6">
+             <p className="text-gray-400 text-xs font-bold uppercase mb-3 border-b border-white/10 pb-2">Opções de Entrega</p>
+             <div className="flex gap-2 mb-3">
+                <button onClick={() => { setTipoEntrega('retirada'); setValorFrete(0); }} className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'retirada' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Store size={14}/> Retirada Loja</button>
+                <button onClick={() => setTipoEntrega('entrega')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'entrega' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Truck size={14}/> Correios</button>
+             </div>
+
+             {tipoEntrega === 'entrega' && (
+                <div className="flex gap-2 animate-in slide-in-from-top-2">
+                   <input type="text" placeholder="CEP (Ex: 28600000)" value={cepCalc} onChange={e=>setCepCalc(e.target.value.replace(/\D/g, ''))} maxLength={8} className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#00e5ff] outline-none font-mono" />
+                   <button disabled={loadingFrete} onClick={simularFrete} className="bg-white/10 hover:bg-[#00e5ff] hover:text-black transition-colors px-4 rounded-xl text-xs font-bold disabled:opacity-50">
+                     {loadingFrete ? 'CALCULANDO...' : 'CALCULAR'}
+                   </button>
+                </div>
+             )}
+          </div>
+
+          <div className="space-y-2 mb-6 border-t border-white/10 pt-4">
+              <div className="flex justify-between items-center text-gray-400 text-sm"><span>Subtotal</span><span className="font-mono">R$ {totalItens.toFixed(2)}</span></div>
+              <div className="flex justify-between items-center text-gray-400 text-sm"><span>Frete</span><span className="font-mono">{valorFrete === 0 ? 'Grátis' : `R$ ${valorFrete.toFixed(2)}`}</span></div>
+              <div className="flex justify-between items-end mt-2 pt-2 border-t border-white/5"><span className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-1">Total do Pedido</span><span className="font-black font-mono text-3xl text-[#00e5ff]">R$ {totalFinal.toFixed(2)}</span></div>
+          </div>
+
+          <button disabled={carrinho.length === 0 || processando} onClick={finalizar} className="w-full bg-[#00e5ff] text-black font-black py-4 rounded-xl hover:bg-white hover:shadow-[0_0_20px_rgba(0,229,255,0.4)] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2 text-lg">
             {processando ? 'PROCESSANDO...' : <><CheckCircle2 size={20} /> FINALIZAR PEDIDO</>}
           </button>
         </div>
       </div>
 
-      {/* MODAL DE TAMANHO EXPRESS */}
-      {prodParaAdicionar && (
-        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setProdParaAdicionar(null)}>
-          <div className="bg-[#161920] border border-[#00e5ff]/20 p-6 rounded-3xl w-full max-w-sm shadow-[0_0_50px_rgba(0,229,255,0.1)]" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-6"><div><h3 className="font-bold text-lg leading-tight">{prodParaAdicionar.nome}</h3><p className="text-[#00e5ff] font-mono mt-1">R$ {prodParaAdicionar.preco.toFixed(2)}</p></div><button onClick={() => setProdParaAdicionar(null)} className="text-gray-400 hover:text-white bg-white/5 p-2 rounded-full"><X size={16}/></button></div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Escolha o Tamanho</p>
-            <div className="grid grid-cols-4 gap-2">
-              {Object.entries(prodParaAdicionar.tamanhos).map(([tam, qtd]) => (
-                <button key={tam} disabled={qtd === 0} onClick={() => confirmarTamanho(prodParaAdicionar, tam)} className="py-3 rounded-xl border border-white/10 font-mono font-bold hover:border-[#00e5ff] hover:text-[#00e5ff] hover:bg-[#00e5ff]/5 transition-all disabled:opacity-20 disabled:cursor-not-allowed bg-black/50">{tam}</button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE AUTENTICAÇÃO (LOGIN / CADASTRO) */}
+      {/* MODAL DE AUTENTICAÇÃO (LOGIN / CADASTRO COM ENDEREÇO) */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAuthModal(false)}>
-          <div className="bg-[#161920] border border-[#00e5ff]/30 p-8 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,229,255,0.1)] relative" onClick={e => e.stopPropagation()}>
+          <div className="bg-[#161920] border border-[#00e5ff]/30 p-8 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,229,255,0.1)] relative max-h-[90vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
             <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white"><X size={20}/></button>
             
             <div className="flex justify-center gap-6 mb-8 border-b border-white/10 pb-4">
@@ -359,26 +415,38 @@ export default function LojaCliente() {
             <form onSubmit={handleAuthSubmit} className="space-y-4">
               {authMode === 'cadastro' && (
                 <div>
-                  <label className="text-xs font-bold text-gray-400 uppercase">Nome Completo</label>
-                  <input required type="text" value={authForm.nome} onChange={e=>setAuthForm({...authForm, nome: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+                  <label className="text-[10px] font-bold text-gray-400 uppercase">Nome Completo</label>
+                  <input required type="text" value={authForm.nome} onChange={e=>setAuthForm({...authForm, nome: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white text-sm" />
                 </div>
               )}
               
               <div>
-                <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
-                <input required type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm, email: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Email</label>
+                <input required type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm, email: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white text-sm" />
               </div>
 
               {authMode === 'cadastro' && (
-                <div>
-                  <label className="text-xs font-bold text-gray-400 uppercase">Telefone / WhatsApp</label>
-                  <input required type="text" value={authForm.telefone} onChange={e=>setAuthForm({...authForm, telefone: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white font-mono" />
-                </div>
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Telefone / WhatsApp</label>
+                    <input required type="text" value={authForm.telefone} onChange={e=>setAuthForm({...authForm, telefone: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white font-mono text-sm" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 border-t border-white/5 pt-4 mt-2">
+                    <div className="col-span-1">
+                      <label className="text-[10px] font-bold text-[#00e5ff] uppercase">CEP</label>
+                      <input required type="text" placeholder="00000000" maxLength={8} value={authForm.cep} onChange={e=>setAuthForm({...authForm, cep: e.target.value.replace(/\D/g, '')})} className="w-full mt-1 p-3 bg-black border border-[#00e5ff]/30 rounded-xl focus:border-[#00e5ff] outline-none text-[#00e5ff] font-mono text-sm" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Endereço Completo</label>
+                      <input required type="text" placeholder="Rua, Número, Bairro, Cidade" value={authForm.enderecoDetalhado} onChange={e=>setAuthForm({...authForm, enderecoDetalhado: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white text-sm" />
+                    </div>
+                  </div>
+                </>
               )}
 
-              <div>
-                <label className="text-xs font-bold text-gray-400 uppercase">Senha</label>
-                <input required type="password" value={authForm.senha} onChange={e=>setAuthForm({...authForm, senha: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white" />
+              <div className={authMode === 'cadastro' ? "pt-4 border-t border-white/5" : ""}>
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Senha</label>
+                <input required type="password" value={authForm.senha} onChange={e=>setAuthForm({...authForm, senha: e.target.value})} className="w-full mt-1 p-3 bg-black border border-white/10 rounded-xl focus:border-[#00e5ff] outline-none text-white text-sm" />
               </div>
 
               <button disabled={loadingAuth} type="submit" className="w-full bg-[#00e5ff] text-black font-black py-4 rounded-xl hover:bg-white transition-all disabled:opacity-50 mt-6 shadow-[0_0_15px_rgba(0,229,255,0.2)] hover:shadow-[0_0_25px_rgba(0,229,255,0.5)]">
