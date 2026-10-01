@@ -43,8 +43,18 @@ CREATE TABLE Produto (
     Nome TEXT NOT NULL,
     Descricao TEXT,
     Preco_Atual REAL NOT NULL,
-    Quantidade_Estoque INTEGER NOT NULL DEFAULT 0,
+    imagem TEXT,
     FOREIGN KEY (ID_Categoria) REFERENCES Categoria(ID_Categoria)
+);
+
+CREATE TABLE Produto_Variante (
+    ID_Variante INTEGER PRIMARY KEY AUTOINCREMENT,
+    ID_Produto INTEGER NOT NULL,
+    Cor TEXT NOT NULL,
+    Tamanho TEXT NOT NULL,
+    Quantidade_Estoque INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(ID_Produto, Cor, Tamanho),
+    FOREIGN KEY (ID_Produto) REFERENCES Produto(ID_Produto) ON DELETE CASCADE
 );
 
 CREATE TABLE Pedido (
