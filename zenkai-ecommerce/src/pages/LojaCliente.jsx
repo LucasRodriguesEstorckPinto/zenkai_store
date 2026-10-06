@@ -1,5 +1,6 @@
+import confetti from 'canvas-confetti';
 import { useState, useEffect } from 'react';
-import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft, LogIn, Truck, Store } from 'lucide-react';
+import { ShoppingBag, X, LogOut, CheckCircle2, User, Package, MapPin, Phone, ArrowLeft, LogIn, Truck, Store, CreditCard, QrCode, Receipt } from 'lucide-react';
 import { api } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -16,20 +17,24 @@ export default function LojaCliente() {
   const [isCarrinhoOpen, setIsCarrinhoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
-  const [prodParaAdicionar, setProdParaAdicionar] = useState(null);
   
-  // ESTADOS DE FRETE NO CARRINHO
+  // ESTADOS DE FRETE
   const [tipoEntrega, setTipoEntrega] = useState('retirada');
   const [cepCalc, setCepCalc] = useState('');
   const [valorFrete, setValorFrete] = useState(0);
-  const [loadingFrete, setLoadingFrete] = useState(false); // NOVO ESTADO
+  const [loadingFrete, setLoadingFrete] = useState(false);
+
+  // ESTADOS DE PAGAMENTO E RECIBO
+  const [metodoPagamento, setMetodoPagamento] = useState('PIX');
+  const [parcelas, setParcelas] = useState(1);
+  const [notaFiscal, setNotaFiscal] = useState(null);
 
   // ESTADOS DO PERFIL
   const [meusPedidos, setMeusPedidos] = useState([]);
   const [perfilForm, setPerfilForm] = useState({ nome: '', telefone: '', endereco: '' });
   const [loadingPerfil, setLoadingPerfil] = useState(false);
 
-  // ESTADOS DE AUTENTICAÇÃO (Cadastro de Endereço)
+  // ESTADOS DE AUTENTICAÇÃO
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState('login'); 
   const [authForm, setAuthForm] = useState({ nome: '', email: '', telefone: '', senha: '', cep: '', enderecoDetalhado: '' });
@@ -59,53 +64,28 @@ export default function LojaCliente() {
     if (view === 'perfil' && isLogged) carregarDadosPerfil();
   }, [view, isLogged]);
 
-  // CALCULAR VALORES DO CARRINHO
   const totalItens = carrinho.reduce((acc, i) => acc + (i.preco * i.qtd), 0);
   const totalFinal = totalItens + valorFrete;
 
-  // NOVA FUNÇÃO: SIMULAR FRETE COM VIACEP
   const simularFrete = async () => {
-    if (cepCalc.length !== 8) {
-      return alert('Por favor, digite um CEP válido com 8 números (somente números).');
-    }
-
+    if (cepCalc.length !== 8) return alert('Por favor, digite um CEP válido com 8 números.');
     setLoadingFrete(true);
     try {
       const response = await fetch(`https://viacep.com.br/ws/${cepCalc}/json/`);
       const data = await response.json();
+      if (data.erro) { alert('CEP não localizado.'); setValorFrete(0); return; }
 
-      if (data.erro) {
-        alert('CEP não localizado nas bases dos Correios.');
-        setValorFrete(0);
-        return;
-      }
-
-      // Regra de Negócio baseada na região (Sede no RJ)
-      let precoCalculado = 35.90; // Padrão Nacional
-      
-      if (data.uf === 'RJ') {
-        precoCalculado = 15.90; // Frete Local
-      } else if (['SP', 'MG', 'ES'].includes(data.uf)) {
-        precoCalculado = 22.90; // Frete Regional (Sudeste)
-      }
+      let precoCalculado = 35.90; 
+      if (data.uf === 'RJ') precoCalculado = 15.90; 
+      else if (['SP', 'MG', 'ES'].includes(data.uf)) precoCalculado = 22.90;
 
       setValorFrete(precoCalculado);
-      
-      // Atualiza o endereço detalhado do cliente automaticamente se for para criar conta
       if (authMode === 'cadastro') {
-        setAuthForm(prev => ({ 
-          ...prev, 
-          enderecoDetalhado: `${data.logradouro}, Bairro ${data.bairro}, ${data.localidade} - ${data.uf}` 
-        }));
+        setAuthForm(prev => ({ ...prev, enderecoDetalhado: `${data.logradouro}, Bairro ${data.bairro}, ${data.localidade} - ${data.uf}` }));
       }
-
       alert(`Entrega para: ${data.localidade} - ${data.uf}\nValor do Frete: R$ ${precoCalculado.toFixed(2)}`);
-
-    } catch (error) {
-      alert('Serviço de cálculo de frete indisponível no momento.');
-    } finally {
-      setLoadingFrete(false);
-    }
+    } catch (error) { alert('Serviço de frete indisponível.'); } 
+    finally { setLoadingFrete(false); }
   };
 
   const handleAuthSubmit = async (e) => {
@@ -114,27 +94,14 @@ export default function LojaCliente() {
     try {
       if (authMode === 'login') {
         const data = await api.login(authForm.email, authForm.senha);
-        if (data.role === 'ADMIN') {
-          navigate('/pdv');
-          return;
-        }
+        if (data.role === 'ADMIN') { navigate('/pdv'); return; }
       } else {
         const enderecoCompleto = `CEP: ${authForm.cep} | ${authForm.enderecoDetalhado}`;
-        await api.cadastrarCliente({ 
-          nome: authForm.nome, 
-          email: authForm.email, 
-          senha: authForm.senha, 
-          telefone: authForm.telefone, 
-          endereco: enderecoCompleto,
-          role: 'CLIENTE' 
-        });
+        await api.cadastrarCliente({ nome: authForm.nome, email: authForm.email, senha: authForm.senha, telefone: authForm.telefone, endereco: enderecoCompleto, role: 'CLIENTE' });
         await api.login(authForm.email, authForm.senha);
       }
-      
-      setIsLogged(true);
-      setShowAuthModal(false);
+      setIsLogged(true); setShowAuthModal(false);
       setAuthForm({ nome: '', email: '', telefone: '', senha: '', cep: '', enderecoDetalhado: '' });
-      
       if (isCarrinhoOpen && carrinho.length > 0) finalizar();
     } catch (err) { alert(err.message || 'Erro na autenticação.'); } 
     finally { setLoadingAuth(false); }
@@ -158,7 +125,6 @@ export default function LojaCliente() {
       setShowAuthModal(true);
       return;
     }
-
     if (tipoEntrega === 'entrega' && valorFrete === 0) {
       alert("Por favor, calcule o frete antes de finalizar o pedido.");
       return;
@@ -169,13 +135,39 @@ export default function LojaCliente() {
       const token = localStorage.getItem('token');
       const tokenData = token ? JSON.parse(atob(token.split('.')[1])) : null;
 
+      // Chama a API enviando o método de pagamento
       await api.checkout({
         total: totalFinal, 
         cliente_id: tokenData?.id,
-        itens: carrinho.map(i => ({ produto_id: i.id, cor: i.cor, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco }))
-      });
+        itens: carrinho.map(i => ({ produto_id: i.id, cor: i.cor, tamanho: i.tamanho, quantidade: i.qtd, preco_unitario: i.preco })),
+        pagamento: {
+          metodo: metodoPagamento,
+          valor_recebido: totalFinal,
+          parcelas: metodoPagamento === 'CARTAO' ? parcelas : 1
+        }
+      }
       
-      alert('Compra confirmada! Acompanhe o status na sua área "Minha Conta".');
+    );
+
+      
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#39ff14', '#ffffff', '#000000'] // Cores da marca Zenkai
+      });
+            
+      // Gera os dados para a Nota Fiscal Visual
+      setNotaFiscal({
+        data: new Date().toLocaleString('pt-BR'),
+        cliente: tokenData?.nome || 'Cliente',
+        metodo: metodoPagamento,
+        parcelas: parcelas,
+        frete: valorFrete,
+        total: totalFinal,
+        itens: [...carrinho]
+      });
+
       setCarrinho([]); 
       localStorage.removeItem('@zenkai-cart'); 
       setIsCarrinhoOpen(false);
@@ -372,19 +364,39 @@ export default function LojaCliente() {
         <div className="p-6 bg-[#0f1115] border-t border-white/10">
           
           {/* SIMULADOR DE FRETE */}
-          <div className="mb-6">
-             <p className="text-gray-400 text-xs font-bold uppercase mb-3 border-b border-white/10 pb-2">Opções de Entrega</p>
+          <div className="mb-4">
+             <p className="text-gray-400 text-[10px] font-bold uppercase mb-2">1. Opções de Entrega</p>
              <div className="flex gap-2 mb-3">
-                <button onClick={() => { setTipoEntrega('retirada'); setValorFrete(0); }} className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'retirada' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Store size={14}/> Retirada Loja</button>
-                <button onClick={() => setTipoEntrega('entrega')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'entrega' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Truck size={14}/> Correios</button>
+                <button onClick={() => { setTipoEntrega('retirada'); setValorFrete(0); }} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'retirada' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Store size={14}/> Retirada Loja</button>
+                <button onClick={() => setTipoEntrega('entrega')} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-2 ${tipoEntrega === 'entrega' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Truck size={14}/> Correios</button>
              </div>
 
              {tipoEntrega === 'entrega' && (
-                <div className="flex gap-2 animate-in slide-in-from-top-2">
-                   <input type="text" placeholder="CEP (Ex: 28600000)" value={cepCalc} onChange={e=>setCepCalc(e.target.value.replace(/\D/g, ''))} maxLength={8} className="flex-1 bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#00e5ff] outline-none font-mono" />
-                   <button disabled={loadingFrete} onClick={simularFrete} className="bg-white/10 hover:bg-[#00e5ff] hover:text-black transition-colors px-4 rounded-xl text-xs font-bold disabled:opacity-50">
-                     {loadingFrete ? 'CALCULANDO...' : 'CALCULAR'}
+                <div className="flex gap-2">
+                   <input type="text" placeholder="CEP (Ex: 28600000)" value={cepCalc} onChange={e=>setCepCalc(e.target.value.replace(/\D/g, ''))} maxLength={8} className="flex-1 bg-black border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-[#00e5ff] outline-none font-mono" />
+                   <button disabled={loadingFrete} onClick={simularFrete} className="bg-white/10 hover:bg-[#00e5ff] hover:text-black transition-colors px-3 rounded-lg text-xs font-bold disabled:opacity-50">
+                     {loadingFrete ? '...' : 'CALCULAR'}
                    </button>
+                </div>
+             )}
+          </div>
+
+          {/* SELETOR DE PAGAMENTO */}
+          <div className="mb-6">
+             <p className="text-gray-400 text-[10px] font-bold uppercase mb-2">2. Método de Pagamento</p>
+             <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => setMetodoPagamento('PIX')} className={`py-2 rounded-lg text-xs font-bold border transition-colors flex flex-col items-center justify-center gap-1 ${metodoPagamento === 'PIX' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><QrCode size={16}/> PIX</button>
+                <button onClick={() => setMetodoPagamento('CARTAO')} className={`py-2 rounded-lg text-xs font-bold border transition-colors flex flex-col items-center justify-center gap-1 ${metodoPagamento === 'CARTAO' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><CreditCard size={16}/> Cartão</button>
+                <button onClick={() => setMetodoPagamento('BOLETO')} className={`py-2 rounded-lg text-xs font-bold border transition-colors flex flex-col items-center justify-center gap-1 ${metodoPagamento === 'BOLETO' ? 'bg-[#00e5ff]/10 text-[#00e5ff] border-[#00e5ff]/50' : 'bg-[#161920] border-white/10 text-gray-400 hover:bg-white/5'}`}><Receipt size={16}/> Boleto</button>
+             </div>
+             
+             {metodoPagamento === 'CARTAO' && (
+                <div className="mt-3">
+                  <select value={parcelas} onChange={e => setParcelas(Number(e.target.value))} className="w-full bg-black border border-white/10 text-white text-sm rounded-lg p-2 outline-none focus:border-[#00e5ff]">
+                    <option value={1}>1x de R$ {totalFinal.toFixed(2)} sem juros</option>
+                    <option value={2}>2x de R$ {(totalFinal / 2).toFixed(2)} sem juros</option>
+                    <option value={3}>3x de R$ {(totalFinal / 3).toFixed(2)} sem juros</option>
+                  </select>
                 </div>
              )}
           </div>
@@ -392,7 +404,7 @@ export default function LojaCliente() {
           <div className="space-y-2 mb-6 border-t border-white/10 pt-4">
               <div className="flex justify-between items-center text-gray-400 text-sm"><span>Subtotal</span><span className="font-mono">R$ {totalItens.toFixed(2)}</span></div>
               <div className="flex justify-between items-center text-gray-400 text-sm"><span>Frete</span><span className="font-mono">{valorFrete === 0 ? 'Grátis' : `R$ ${valorFrete.toFixed(2)}`}</span></div>
-              <div className="flex justify-between items-end mt-2 pt-2 border-t border-white/5"><span className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-1">Total do Pedido</span><span className="font-black font-mono text-3xl text-[#00e5ff]">R$ {totalFinal.toFixed(2)}</span></div>
+              <div className="flex justify-between items-end mt-2 pt-2 border-t border-white/5"><span className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-1">Total a Pagar</span><span className="font-black font-mono text-3xl text-[#00e5ff]">R$ {totalFinal.toFixed(2)}</span></div>
           </div>
 
           <button disabled={carrinho.length === 0 || processando} onClick={finalizar} className="w-full bg-[#00e5ff] text-black font-black py-4 rounded-xl hover:bg-white hover:shadow-[0_0_20px_rgba(0,229,255,0.4)] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2 text-lg">
@@ -401,7 +413,7 @@ export default function LojaCliente() {
         </div>
       </div>
 
-      {/* MODAL DE AUTENTICAÇÃO (LOGIN / CADASTRO COM ENDEREÇO) */}
+      {/* MODAL DE AUTENTICAÇÃO */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAuthModal(false)}>
           <div className="bg-[#161920] border border-[#00e5ff]/30 p-8 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,229,255,0.1)] relative max-h-[90vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
@@ -453,6 +465,55 @@ export default function LojaCliente() {
                 {loadingAuth ? 'AGUARDE...' : (authMode === 'login' ? 'ACESSAR MINHA CONTA' : 'FINALIZAR CADASTRO')}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE NOTA FISCAL / RECIBO */}
+      {notaFiscal && (
+        <div className="fixed inset-0 bg-black/90 z-[90] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#fdfdfd] text-black p-8 rounded border-t-8 border-[#00e5ff] w-full max-w-sm font-mono text-sm shadow-2xl relative shadow-[0_0_40px_rgba(0,229,255,0.2)]">
+            <h2 className="text-center font-black text-2xl mb-1 tracking-tighter">ZEN<span className="text-[#00e5ff]">KAI</span></h2>
+            <p className="text-center text-[10px] text-gray-500 mb-4 border-b border-dashed border-gray-300 pb-4">RECIBO DE VENDA ONLINE</p>
+            
+            <div className="space-y-1 mb-4 text-xs">
+              <p><span className="font-bold">DATA:</span> {notaFiscal.data}</p>
+              <p><span className="font-bold">CLIENTE:</span> {notaFiscal.cliente}</p>
+              <p><span className="font-bold">MÉTODO:</span> {notaFiscal.metodo} {notaFiscal.metodo === 'CARTAO' && `(${notaFiscal.parcelas}x)`}</p>
+            </div>
+
+            <div className="border-t border-b border-dashed border-gray-400 py-3 mb-4 space-y-2">
+              <div className="flex justify-between text-[10px] text-gray-500 font-bold mb-1">
+                <span>ITEM</span>
+                <span>VALOR</span>
+              </div>
+              {notaFiscal.itens.map((i, idx) => (
+                <div key={idx} className="flex justify-between text-xs">
+                  <span className="pr-4">{i.qtd}x {i.nome.substring(0,20)}... <br/><span className="text-[10px] text-gray-500">Tam: {i.tamanho} | Cor: {i.cor}</span></span>
+                  <span>R$ {(i.preco * i.qtd).toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1 text-xs mb-4">
+              <div className="flex justify-between text-gray-600">
+                <span>SUBTOTAL:</span>
+                <span>R$ {(notaFiscal.total - notaFiscal.frete).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>FRETE:</span>
+                <span>R$ {notaFiscal.frete.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-between font-black text-lg mb-6 border-t border-gray-300 pt-2">
+              <span>TOTAL:</span>
+              <span>R$ {notaFiscal.total.toFixed(2)}</span>
+            </div>
+
+            <button onClick={() => setNotaFiscal(null)} className="w-full bg-black text-white py-3 font-bold rounded-lg hover:bg-[#00e5ff] hover:text-black transition-colors">
+              FECHAR RECIBO
+            </button>
           </div>
         </div>
       )}
